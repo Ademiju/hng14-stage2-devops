@@ -1,6 +1,10 @@
+from pathlib import Path
+import sys
 from unittest.mock import Mock
 
 from fastapi.testclient import TestClient
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from api import main
 
