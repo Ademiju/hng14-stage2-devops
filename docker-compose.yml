@@ -1,0 +1,125 @@
+services:
+  redis:
+    image: ${REDIS_IMAGE}
+    restart: ${RESTART_POLICY}
+    command:
+      - redis-server
+      - --appendonly
+      - ${REDIS_APPENDONLY}
+      - --requirepass
+      - ${REDIS_PASSWORD}
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - ${REDIS_VOLUME_NAME}:/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - redis-cli -a "$$REDIS_PASSWORD" ping | grep PONG
+      interval: ${REDIS_HEALTHCHECK_INTERVAL}
+      timeout: ${REDIS_HEALTHCHECK_TIMEOUT}
+      retries: ${REDIS_HEALTHCHECK_RETRIES}
+      start_period: ${REDIS_HEALTHCHECK_START_PERIOD}
+    networks:
+      - internal
+    cpus: ${REDIS_CPUS}
+    mem_limit: ${REDIS_MEMORY}
+
+  api:
+    image: ${API_IMAGE}
+    build:
+      context: ${API_BUILD_CONTEXT}
+      dockerfile: ${API_DOCKERFILE}
+    restart: ${RESTART_POLICY}
+    environment:
+      REDIS_HOST: ${API_REDIS_HOST}
+      REDIS_PORT: ${API_REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JOB_QUEUE: ${JOB_QUEUE}
+      API_CONTAINER_PORT: ${API_CONTAINER_PORT}
+      API_HEALTHCHECK_PATH: ${API_HEALTHCHECK_PATH}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ['API_CONTAINER_PORT'] + os.environ['API_HEALTHCHECK_PATH'])"
+      interval: ${API_HEALTHCHECK_INTERVAL}
+      timeout: ${API_HEALTHCHECK_TIMEOUT}
+      retries: ${API_HEALTHCHECK_RETRIES}
+      start_period: ${API_HEALTHCHECK_START_PERIOD}
+    ports:
+      - "${API_HOST_PORT}:${API_CONTAINER_PORT}"
+    networks:
+      - internal
+    cpus: ${API_CPUS}
+    mem_limit: ${API_MEMORY}
+
+  worker:
+    image: ${WORKER_IMAGE}
+    build:
+      context: ${WORKER_BUILD_CONTEXT}
+      dockerfile: ${WORKER_DOCKERFILE}
+    restart: ${RESTART_POLICY}
+    environment:
+      REDIS_HOST: ${WORKER_REDIS_HOST}
+      REDIS_PORT: ${WORKER_REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JOB_QUEUE: ${JOB_QUEUE}
+      WORKER_POLL_TIMEOUT: ${WORKER_POLL_TIMEOUT}
+      JOB_DURATION_SECONDS: ${WORKER_JOB_DURATION_SECONDS}
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import os, redis; client = redis.Redis(host=os.environ['REDIS_HOST'], port=int(os.environ['REDIS_PORT']), password=os.environ.get('REDIS_PASSWORD') or None, decode_responses=True); raise SystemExit(0 if client.ping() else 1)"
+      interval: ${WORKER_HEALTHCHECK_INTERVAL}
+      timeout: ${WORKER_HEALTHCHECK_TIMEOUT}
+      retries: ${WORKER_HEALTHCHECK_RETRIES}
+      start_period: ${WORKER_HEALTHCHECK_START_PERIOD}
+    networks:
+      - internal
+    cpus: ${WORKER_CPUS}
+    mem_limit: ${WORKER_MEMORY}
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    build:
+      context: ${FRONTEND_BUILD_CONTEXT}
+      dockerfile: ${FRONTEND_DOCKERFILE}
+    restart: ${RESTART_POLICY}
+    environment:
+      API_URL: ${FRONTEND_API_URL}
+      PORT: ${FRONTEND_CONTAINER_PORT}
+      HOST: ${FRONTEND_HOST}
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -qO- "http://127.0.0.1:${FRONTEND_CONTAINER_PORT}${FRONTEND_HEALTHCHECK_PATH}" >/dev/null || exit 1
+      interval: ${FRONTEND_HEALTHCHECK_INTERVAL}
+      timeout: ${FRONTEND_HEALTHCHECK_TIMEOUT}
+      retries: ${FRONTEND_HEALTHCHECK_RETRIES}
+      start_period: ${FRONTEND_HEALTHCHECK_START_PERIOD}
+    ports:
+      - "${FRONTEND_HOST_PORT}:${FRONTEND_CONTAINER_PORT}"
+    networks:
+      - internal
+    cpus: ${FRONTEND_CPUS}
+    mem_limit: ${FRONTEND_MEMORY}
+
+networks:
+  internal:
+    name: ${INTERNAL_NETWORK_NAME}
+    internal: true
+
+volumes:
+  redis-data:
+    name: ${REDIS_VOLUME_NAME}
