@@ -14,8 +14,24 @@ trap cleanup EXIT
 
 docker compose --project-name "${COMPOSE_PROJECT_NAME}" --env-file "${ENV_FILE}" up -d --wait --no-build
 
+frontend_url="http://127.0.0.1:${FRONTEND_HOST_PORT}"
+
+for attempt in {1..30}; do
+  if curl -fsS "${frontend_url}/health" >/dev/null; then
+    break
+  fi
+  sleep 2
+done
+
+submit_response="$(curl -fsS -X POST "${frontend_url}/submit")"
+
+if [[ -z "${submit_response}" ]]; then
+  echo "Frontend submit endpoint returned an empty response" >&2
+  exit 1
+fi
+
 job_id="$(
-  curl -fsS -X POST "http://127.0.0.1:${FRONTEND_HOST_PORT}/submit" \
+  printf '%s' "${submit_response}" \
     | python -c "import json,sys; print(json.load(sys.stdin)['job_id'])"
 )"
 
@@ -29,7 +45,7 @@ final_status=""
 
 while (( SECONDS < deadline )); do
   final_status="$(
-    curl -fsS "http://127.0.0.1:${FRONTEND_HOST_PORT}/status/${job_id}" \
+    curl -fsS "${frontend_url}/status/${job_id}" \
       | python -c "import json,sys; print(json.load(sys.stdin).get('status', ''))"
   )"
 
