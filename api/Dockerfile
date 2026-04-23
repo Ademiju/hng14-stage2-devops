@@ -16,13 +16,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-RUN addgroup --system appgroup \
-    && adduser --system --ingroup appgroup --home /home/appuser appuser
+RUN mkdir -p /home/appuser \
+    && echo 'appgroup:x:10001:' >> /etc/group \
+    && echo 'appuser:x:10001:10001::/home/appuser:/usr/sbin/nologin' >> /etc/passwd
 
 COPY --from=builder /install /usr/local
 COPY . .
 
-RUN chown -R appuser:appgroup /app /home/appuser
+RUN chown -R 10001:10001 /app /home/appuser
 
 USER appuser
 
