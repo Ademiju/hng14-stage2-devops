@@ -1,20 +1,30 @@
 # hng14-stage2-devops
 
-This repository runs a four-service job processing stack:
+This repository contains a small job-processing system made up of four services:
 
-- `frontend`: Node.js UI for submitting and tracking jobs
-- `api`: FastAPI service for job creation and status lookup
-- `worker`: Python worker that consumes queued jobs
-- `redis`: shared queue and job-status store
+- `frontend`: Node.js UI and proxy for job submission and status lookup
+- `api`: FastAPI service that creates jobs and exposes job status
+- `worker`: Python worker that processes queued jobs
+- `redis`: shared queue and job state store
+
+It also includes a GitHub Actions CI/CD pipeline that runs these stages in order:
+
+- `lint`
+- `test`
+- `build`
+- `security scan`
+- `integration test`
+- `deploy`
 
 ## Prerequisites
 
-Install these on a clean machine before running anything:
+For local development and Docker runs:
 
 - Docker Engine 24+ or Docker Desktop with Docker Compose v2
 - Git
+- Python 3.12+
 
-Verify the tools are available:
+Verify the toolchain:
 
 ```powershell
 docker --version
@@ -23,22 +33,22 @@ git --version
 python --version
 ```
 
-## First-Time Setup
+## Local Setup
 
 1. Clone the repository:
 
 ```powershell
-git clone <your-repo-url>
+git clone https://github.com/Ademiju/hng14-stage2-devops
 cd hng14-stage2-devops
 ```
 
-2. Create the runtime environment file from the template:
+2. Create the runtime env file:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-3. Install Python dependencies for local API development and tests:
+3. Install local Python dependencies for API and worker development:
 
 ```powershell
 python -m pip install --upgrade pip
@@ -46,63 +56,59 @@ python -m pip install -r api\requirements-dev.txt
 python -m pip install -r worker\requirements-dev.txt
 ```
 
-4. Edit `.env` and set at minimum:
+4. Update `.env` as needed. At minimum, review:
 
-- `REDIS_PASSWORD` to a real password
-- `API_HOST_PORT` if `8000` is already in use
-- `FRONTEND_HOST_PORT` if `3000` is already in use
+- `REDIS_PASSWORD`
+- `API_HOST_PORT`
+- `FRONTEND_HOST_PORT`
 
-## Bring The Full Stack Up
+## Run The Stack
 
-Build and start everything:
+Start everything:
 
 ```powershell
 docker compose up --build -d
 ```
 
-Follow startup logs:
+Watch logs:
 
 ```powershell
 docker compose logs -f
 ```
 
-Check container health and state:
+Check service state and health:
 
 ```powershell
 docker compose ps
 ```
 
-## What Successful Startup Looks Like
+## Expected Result
 
-`docker compose ps` should show these services in `running` state:
-
-- `redis`
-- `api`
-- `worker`
-- `frontend`
-
-The `STATUS` column should include healthy checks for:
+After startup, `docker compose ps` should show these services running:
 
 - `redis`
 - `api`
 - `worker`
 - `frontend`
 
-Expected endpoints after startup:
+The status output should also show health checks passing for all four services.
 
-- By default, frontend: `http://localhost:3000`
-- By default, API health: `http://localhost:8000/health`
+Default URLs:
+
+- Frontend: `http://localhost:3000`
+- API health: `http://localhost:8000/health`
 
 If you changed `FRONTEND_HOST_PORT` or `API_HOST_PORT` in `.env`, use those values instead.
 
-Manual smoke test:
+## Smoke Test
 
-1. Open the frontend in a browser.
-2. Click `Submit New Job`.
-3. A job id should appear.
-4. The job status should progress from `queued` to `processing` to `completed`.
+Browser flow:
 
-API smoke test from the terminal:
+1. Open the frontend.
+2. Submit a new job.
+3. Confirm the job appears and progresses from `queued` to `processing` to `completed`.
+
+PowerShell flow:
 
 ```powershell
 $job = Invoke-RestMethod -Method Post -Uri http://localhost:3000/submit
@@ -130,8 +136,22 @@ Rebuild after code changes:
 docker compose up --build -d
 ```
 
+## CI/CD
+
+The workflow lives in [.github/workflows/ci-cd.yml](C:\Users\HP\Desktop\HNG\Devops\App\hng14-stage2-devops\.github\workflows\ci-cd.yml).
+
+Key behavior:
+
+- `lint` runs `flake8`, `eslint`, and `hadolint`
+- `test` runs API unit tests with mocked Redis and uploads coverage
+- `build` builds all three images, tags them with `${{ github.sha }}` and `latest`, and pushes them to a local registry service
+- `security scan` scans the built images with Trivy and uploads SARIF results
+- `integration test` brings the full stack up in the runner and validates the frontend-driven job flow
+- `deploy` runs only on pushes to `main` and performs a scripted rolling update with health-check gating and rollback-on-failure behavior
+
 ## Notes
 
-- All service wiring, ports, resource limits, healthcheck timing, and image/build settings come from `.env`.
-- Redis is not published to the host; it is only reachable on the internal Docker network.
-- Service startup is gated on healthy dependencies, not just container creation.
+- Docker Compose reads `.env`, not `.env.example`
+- GitHub Actions does not need a committed `.env`; the workflow generates `.env.ci` during the integration job
+- Redis is not exposed on the host in Docker Compose
+- Service startup is gated on healthy dependencies, not just container startup
