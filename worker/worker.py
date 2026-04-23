@@ -32,6 +32,7 @@ def process_job(job_id):
     r.hset(f"job:{job_id}", "status", "completed")
     print(f"Done: {job_id}")
 
+
 signal.signal(signal.SIGINT, stop_worker)
 signal.signal(signal.SIGTERM, stop_worker)
 

@@ -30,6 +30,7 @@ def create_job():
         status_code=201,
     )
 
+
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str):
     status = r.hget(f"job:{job_id}", "status")
