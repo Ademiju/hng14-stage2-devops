@@ -11,7 +11,7 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
     volumes:
-      - ${REDIS_VOLUME_NAME}:/data
+      - redis-data:/data
     healthcheck:
       test:
         - CMD-SHELL
