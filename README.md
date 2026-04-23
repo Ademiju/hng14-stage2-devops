@@ -143,10 +143,10 @@ The workflow lives in [.github/workflows/ci-cd.yml](C:\Users\HP\Desktop\HNG\Devo
 Key behavior:
 
 - `lint` runs `flake8`, `eslint`, and `hadolint`
-- `test` runs API unit tests with mocked Redis and uploads coverage
-- `build` builds all three images, tags them with `${{ github.sha }}` and `latest`, and pushes them to a local registry service
+- `test` runs API unit tests from `tests/` with mocked Redis and uploads coverage
+- `build` builds all three images with layer caching, tags them with `${{ github.sha }}` and `latest`, and pushes them to a local registry service
 - `security scan` scans the built images with Trivy and uploads SARIF results
-- `integration test` brings the full stack up in the runner and validates the frontend-driven job flow
+- `integration test` brings the full stack up with Docker Compose in the runner and validates the frontend-driven job flow through `tests/integration.sh`
 - `deploy` runs only on pushes to `main` and performs a scripted rolling update with health-check gating and rollback-on-failure behavior
 
 ## Notes

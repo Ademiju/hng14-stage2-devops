@@ -24,6 +24,11 @@ services:
       - internal
     cpus: ${REDIS_CPUS}
     mem_limit: ${REDIS_MEMORY}
+    deploy:
+      resources:
+        limits:
+          cpus: "${REDIS_CPUS}"
+          memory: ${REDIS_MEMORY}
 
   api:
     image: ${API_IMAGE}
@@ -55,6 +60,11 @@ services:
       - internal
     cpus: ${API_CPUS}
     mem_limit: ${API_MEMORY}
+    deploy:
+      resources:
+        limits:
+          cpus: "${API_CPUS}"
+          memory: ${API_MEMORY}
 
   worker:
     image: ${WORKER_IMAGE}
@@ -84,6 +94,11 @@ services:
       - internal
     cpus: ${WORKER_CPUS}
     mem_limit: ${WORKER_MEMORY}
+    deploy:
+      resources:
+        limits:
+          cpus: "${WORKER_CPUS}"
+          memory: ${WORKER_MEMORY}
 
   frontend:
     image: ${FRONTEND_IMAGE}
@@ -114,6 +129,11 @@ services:
       - internal
     cpus: ${FRONTEND_CPUS}
     mem_limit: ${FRONTEND_MEMORY}
+    deploy:
+      resources:
+        limits:
+          cpus: "${FRONTEND_CPUS}"
+          memory: ${FRONTEND_MEMORY}
 
 networks:
   internal:

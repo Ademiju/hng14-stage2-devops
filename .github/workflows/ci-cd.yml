@@ -16,29 +16,32 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - uses: actions/setup-node@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: "20"
 
       - name: Install lint dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flake8
-          npm install --prefix frontend
+          pip install -r api/requirements-dev.txt -r worker/requirements-dev.txt
+          npm ci --prefix frontend
 
       - name: Lint Python
         run: flake8 api worker
 
-      - name: Lint JavaScript
-        run: npm run --prefix frontend lint
+      - name: Lint JavaScript with eslint
+        run: npx --prefix frontend eslint frontend/app.js
 
-      - name: Lint Dockerfiles
+      - name: Lint Dockerfiles with hadolint
         run: |
           for file in api/Dockerfile worker/Dockerfile frontend/Dockerfile; do
             docker run --rm -i hadolint/hadolint < "$file"
@@ -48,20 +51,22 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r api/requirements.txt pytest pytest-cov httpx
+          pip install -r api/requirements.txt
 
       - name: Run API unit tests with coverage
         run: |
-          pytest api/tests \
+          pytest tests \
             --cov=api \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml
@@ -81,7 +86,11 @@ jobs:
         ports:
           - 5000:5000
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Wait for local registry
         run: |
@@ -94,27 +103,53 @@ jobs:
           echo "Local registry did not become ready in time" >&2
           exit 1
 
-      - name: Build and push images to local registry
+      - name: Build and push API image to local registry with cache
         env:
           GIT_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          docker build -t "${API_REPO}:${GIT_SHA}" -t "${API_REPO}:latest" api
-          docker build -t "${WORKER_REPO}:${GIT_SHA}" -t "${WORKER_REPO}:latest" worker
-          docker build -t "${FRONTEND_REPO}:${GIT_SHA}" -t "${FRONTEND_REPO}:latest" frontend
+          docker buildx build \
+            --cache-from type=gha,scope=api \
+            --cache-to type=gha,mode=max,scope=api \
+            --tag "${API_REPO}:${GIT_SHA}" \
+            --tag "${API_REPO}:latest" \
+            --push \
+            api
 
-          docker push "${API_REPO}:${GIT_SHA}"
-          docker push "${API_REPO}:latest"
-          docker push "${WORKER_REPO}:${GIT_SHA}"
-          docker push "${WORKER_REPO}:latest"
-          docker push "${FRONTEND_REPO}:${GIT_SHA}"
-          docker push "${FRONTEND_REPO}:latest"
+      - name: Build and push worker image to local registry with cache
+        env:
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --cache-from type=gha,scope=worker \
+            --cache-to type=gha,mode=max,scope=worker \
+            --tag "${WORKER_REPO}:${GIT_SHA}" \
+            --tag "${WORKER_REPO}:latest" \
+            --push \
+            worker
+
+      - name: Build and push frontend image to local registry with cache
+        env:
+          GIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          docker buildx build \
+            --cache-from type=gha,scope=frontend \
+            --cache-to type=gha,mode=max,scope=frontend \
+            --tag "${FRONTEND_REPO}:${GIT_SHA}" \
+            --tag "${FRONTEND_REPO}:latest" \
+            --push \
+            frontend
 
       - name: Export image archives
         env:
           GIT_SHA: ${{ github.sha }}
         run: |
           mkdir -p image-artifacts
+          docker pull "${API_REPO}:${GIT_SHA}"
+          docker pull "${WORKER_REPO}:${GIT_SHA}"
+          docker pull "${FRONTEND_REPO}:${GIT_SHA}"
           docker save "${API_REPO}:${GIT_SHA}" -o image-artifacts/api-image.tar
           docker save "${WORKER_REPO}:${GIT_SHA}" -o image-artifacts/worker-image.tar
           docker save "${FRONTEND_REPO}:${GIT_SHA}" -o image-artifacts/frontend-image.tar
@@ -129,7 +164,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Download built images
         uses: actions/download-artifact@v4
@@ -183,7 +219,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: security_scan
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Download built images
         uses: actions/download-artifact@v4
@@ -200,14 +237,20 @@ jobs:
       - name: Create CI environment file
         env:
           GIT_SHA: ${{ github.sha }}
+          CI_REDIS_PASSWORD: ${{ secrets.CI_REDIS_PASSWORD }}
         run: |
+          if [ -n "${CI_REDIS_PASSWORD}" ]; then
+            REDIS_PASSWORD_VALUE="${CI_REDIS_PASSWORD}"
+          else
+            REDIS_PASSWORD_VALUE="$(python -c "import secrets; print(secrets.token_urlsafe(24))")"
+          fi
           cat <<EOF > .env.ci
           RESTART_POLICY=unless-stopped
           INTERNAL_NETWORK_NAME=job-processing-ci
           JOB_QUEUE=jobs
           REDIS_IMAGE=redis:7-alpine
           REDIS_APPENDONLY=yes
-          REDIS_PASSWORD=ci-password
+          REDIS_PASSWORD=${REDIS_PASSWORD_VALUE}
           REDIS_VOLUME_NAME=job-processing-ci-redis-data
           REDIS_CPUS=0.50
           REDIS_MEMORY=256m
@@ -258,17 +301,25 @@ jobs:
           FRONTEND_HEALTHCHECK_START_PERIOD=5s
           EOF
 
-      - name: Run full-stack integration test
+      - name: Start full stack with docker compose
+        run: docker compose --project-name job-ci --env-file .env.ci up -d --wait --no-build
+
+      - name: Run full-stack integration test script
         env:
-          FRONTEND_HOST_PORT: "3000"
-        run: bash scripts/integration_test.sh
+          COMPOSE_PROJECT_NAME: job-ci
+        run: timeout 120s bash tests/integration.sh
+
+      - name: Tear down full stack
+        if: always()
+        run: docker compose --project-name job-ci --env-file .env.ci down -v --remove-orphans
 
   deploy:
     runs-on: ubuntu-latest
     needs: integration_test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
       - name: Download built images
         uses: actions/download-artifact@v4
@@ -300,7 +351,7 @@ jobs:
           FRONTEND_IMAGE_LATEST: ${{ env.FRONTEND_REPO }}:latest
           REDIS_IMAGE: redis:7-alpine
           REDIS_APPENDONLY: "yes"
-          REDIS_PASSWORD: deploy-password
+          REDIS_PASSWORD: ${{ secrets.DEPLOY_REDIS_PASSWORD }}
           JOB_QUEUE: jobs
           API_REDIS_PORT: "6379"
           WORKER_REDIS_PORT: "6379"
