@@ -28,7 +28,7 @@ done
 
 submit_response="$(
   docker compose --project-name "${COMPOSE_PROJECT_NAME}" --env-file "${ENV_FILE}" exec -T frontend \
-    sh -lc "wget -qO- --method=POST http://127.0.0.1:${FRONTEND_CONTAINER_PORT}/submit"
+    sh -lc "wget -qO- --post-data='' http://127.0.0.1:${FRONTEND_CONTAINER_PORT}/submit"
 )"
 
 if [[ -z "${submit_response}" ]]; then
