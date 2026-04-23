@@ -7,10 +7,10 @@ on:
   pull_request:
 
 env:
-  REGISTRY_HOST: localhost:5000
-  API_REPO: localhost:5000/job-processing-api
-  WORKER_REPO: localhost:5000/job-processing-worker
-  FRONTEND_REPO: localhost:5000/job-processing-frontend
+  REGISTRY_HOST: 127.0.0.1:5000
+  API_REPO: 127.0.0.1:5000/job-processing-api
+  WORKER_REPO: 127.0.0.1:5000/job-processing-worker
+  FRONTEND_REPO: 127.0.0.1:5000/job-processing-frontend
 
 jobs:
   lint:
@@ -113,8 +113,10 @@ jobs:
             --cache-to type=gha,mode=max,scope=api \
             --tag "${API_REPO}:${GIT_SHA}" \
             --tag "${API_REPO}:latest" \
-            --push \
+            --load \
             api
+          docker push "${API_REPO}:${GIT_SHA}"
+          docker push "${API_REPO}:latest"
 
       - name: Build and push worker image to local registry with cache
         env:
@@ -126,8 +128,10 @@ jobs:
             --cache-to type=gha,mode=max,scope=worker \
             --tag "${WORKER_REPO}:${GIT_SHA}" \
             --tag "${WORKER_REPO}:latest" \
-            --push \
+            --load \
             worker
+          docker push "${WORKER_REPO}:${GIT_SHA}"
+          docker push "${WORKER_REPO}:latest"
 
       - name: Build and push frontend image to local registry with cache
         env:
@@ -139,17 +143,16 @@ jobs:
             --cache-to type=gha,mode=max,scope=frontend \
             --tag "${FRONTEND_REPO}:${GIT_SHA}" \
             --tag "${FRONTEND_REPO}:latest" \
-            --push \
+            --load \
             frontend
+          docker push "${FRONTEND_REPO}:${GIT_SHA}"
+          docker push "${FRONTEND_REPO}:latest"
 
       - name: Export image archives
         env:
           GIT_SHA: ${{ github.sha }}
         run: |
           mkdir -p image-artifacts
-          docker pull "${API_REPO}:${GIT_SHA}"
-          docker pull "${WORKER_REPO}:${GIT_SHA}"
-          docker pull "${FRONTEND_REPO}:${GIT_SHA}"
           docker save "${API_REPO}:${GIT_SHA}" -o image-artifacts/api-image.tar
           docker save "${WORKER_REPO}:${GIT_SHA}" -o image-artifacts/worker-image.tar
           docker save "${FRONTEND_REPO}:${GIT_SHA}" -o image-artifacts/frontend-image.tar
